@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <title>Painel Administrativo - Segredo da Colina 🌿</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <!-- Flatpickr CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Segredo da Colina 🌿</h1>
+      <p class="subtitle">Gestão de Valores e Bloqueios</p>
+      <div class="selectors">
+        <button id="mesAnterior">◀</button>
+        <span id="mesAtual"></span>
+        <button id="mesProximo">▶</button>
+      </div>
+      <div>
+        <select id="chale">
+          <option value="Chalé 1">Chalé 1</option>
+          <option value="Chalé 2">Chalé 2</option>
+        </select>
+      </div>
+    </header>
+
+    <main>
+      <div id="calendario"></div>
+
+      <div class="painel-acoes">
+        <div class="bloco">
+          <h3>💰 Definir valor</h3>
+          <input type="number" id="valor" placeholder="R$" step="1" min="0">
+          <button id="btnSalvarValor">Salvar Valores</button>
+        </div>
+
+        <div class="bloco">
+          <button id="btnBloquear">⛔ Bloquear / Desbloquear</button>
+        </div>
+      </div>
+
+      <div class="legenda">
+        <span><div class="leg verde"></div>Disponível</span>
+        <span><div class="leg vermelho"></div>Ocupado</span>
+        <span><div class="leg azul"></div>Selecionado</span>
+      </div>
+
+      <p id="mensagem"></p>
+    </main>
+  </div>
+
+  <!-- Flatpickr JS -->
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js"></script>
+  <script>
+    // Configurar Flatpickr para Check-in e Check-out
+    flatpickr("#data_checkin", {
+      dateFormat: "d/m/Y",
+      firstDayOfWeek: 1,
+      locale: "pt",
+      disableMobile: true,
+      weekNumbers: false
+    });
+    flatpickr("#data_checkout", {
+      dateFormat: "d/m/Y",
+      firstDayOfWeek: 1,
+      locale: "pt",
+      disableMobile: true,
+      weekNumbers: false
+    });
+
+    const calendario = document.getElementById('calendario');
+    const chaleSelect = document.getElementById('chale');
+    const mesAtualEl = document.getElementById('mesAtual');
+    const valorInput = document.getElementById('valor');
+    const msg = document.getElementById('mensagem');
+
+    let hoje = new Date();
+    let ano = hoje.getFullYear();
+    let mes = hoje.getMonth() + 1;
+    let selecionados = [];
+
+    const meses = [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+
+    function localDateFromISO(iso) {
+      const [y, m, d] = iso.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+
+    function atualizarMesTitulo() {
+      mesAtualEl.textContent = `${meses[mes - 1]} ${ano}`;
+    }
+
+    document.getElementById('mesAnterior').addEventListener('click', () => {
+      mes--; if (mes < 1) { mes = 12; ano--; } carregarCalendario();
+    });
+    document.getElementById('mesProximo').addEventListener('click', () => {
+      mes++; if (mes > 12) { mes = 1; ano++; } carregarCalendario();
+    });
+
+    async function carregarCalendario() {
+      const chale = chaleSelect.value;
+      atualizarMesTitulo();
+      calendario.innerHTML = "<p>Carregando...</p>";
+
+      const res = await fetch(`/api/calendario/${encodeURIComponent(chale)}/${ano}/${mes}`);
+      const dias = await res.json();
+
+      const primeiroDia = (new Date(ano, mes - 1, 1).getDay() + 6) % 7;
+
+      let html = `
+        <div class="grid-header">
+          <div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sab</div><div>Dom</div>
+        </div>
+        <div class="grid">`;
+
+      for (let i = 0; i < primeiroDia; i++) html += `<div class="vazio"></div>`;
+
+      dias.forEach(d => {
+        const dataObj = localDateFromISO(d.data);
+        const diaNum = dataObj.getDate();
+
+        let classeDia = "dia";
+        if (d.status === "ocupado") classeDia += " vermelho";
+        else if (d.status === "bloqueado") classeDia += " vermelho"; // Garantir que bloqueado fique vermelho
+        else classeDia += " verde";
+
+        const dow = dataObj.getDay();
+        if (dow === 6 || dow === 0) classeDia += " fimsemana";
+
+        html += `<div class="${classeDia}" data-data="${d.data}">
+                   ${diaNum}<br><small>R$${d.valor}</small>
+                 </div>`;
+      });
+
+      html += `</div>`;
+      calendario.innerHTML = html;
+
+      document.querySelectorAll('.dia.verde, .dia.vermelho').forEach(el => {
+        el.addEventListener('click', () => toggleSelecao(el));
+      });
+
+      atualizarSelecaoVisual();
+    }
+
+    function toggleSelecao(el) {
+      const data = el.dataset.data;
+      if (selecionados.includes(data)) {
+        selecionados = selecionados.filter(d => d !== data);
+      } else {
+        selecionados.push(data);
+      }
+      atualizarSelecaoVisual();
+    }
+
+    function atualizarSelecaoVisual() {
+      document.querySelectorAll('.dia').forEach(el => {
+        el.classList.toggle('selecionado', selecionados.includes(el.dataset.data));
+      });
+      msg.textContent = selecionados.length ? `${selecionados.length} dia(s) selecionado(s).` : "";
+    }
+
+    document.getElementById('btnSalvarValor').addEventListener('click', async () => {
+      if (!selecionados.length) { msg.textContent = "Selecione ao menos um dia."; return; }
+      const valor = parseFloat(valorInput.value);
+      if (isNaN(valor)) { msg.textContent = "Informe um valor válido."; return; }
+
+      const chale = chaleSelect.value;
+      const body = { chale, datas: selecionados, valor };
+      const resp = await fetch('/api/definir_valor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (resp.ok) {
+        msg.textContent = "💰 Valores atualizados com sucesso!";
+        selecionados = [];
+        carregarCalendario();
+      } else {
+        msg.textContent = "Erro ao salvar valores.";
+      }
+    });
+
+    document.getElementById('btnBloquear').addEventListener('click', async () => {
+      if (!selecionados.length) { msg.textContent = "Selecione ao menos um dia."; return; }
+
+      const chale = chaleSelect.value;
+      const body = { chale, datas: selecionados };
+      const resp = await fetch('/api/bloquear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (resp.ok) {
+        msg.textContent = "⛔ Bloqueio/Desbloqueio aplicado!";
+        selecionados = [];
+        carregarCalendario();
+      } else {
+        msg.textContent = "Erro ao atualizar bloqueios.";
+      }
+    });
+
+    chaleSelect.addEventListener('change', carregarCalendario);
+    carregarCalendario();
+  </script>
+</body>
+</html>
